@@ -1,4 +1,4 @@
-import {Await, useLoaderData, Link} from 'react-router';
+<h1>Cough Bros Inc. — Grow Smarter</h1>import {Await, useLoaderData, Link} from 'react-router';
 import {Suspense} from 'react';
 import {Image} from '@shopify/hydrogen';
 import {ProductItem} from '~/components/ProductItem';
