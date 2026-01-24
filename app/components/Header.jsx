@@ -177,7 +177,7 @@ const FALLBACK_HEADER_MENU = {
       tags: [],
       title: 'Collections',
       type: 'HTTP',
-      url: '/collections',
+      url: '/Mars Hydro',
       items: [],
     },
     {
