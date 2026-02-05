@@ -1,0 +1,247 @@
+import {Await, Link, useLoaderData} from '@remix-run/react';
+import {defer, type LoaderFunctionArgs} from '@shopify/remix-oxygen';
+import {Suspense} from 'react';
+
+const GROW_COLLECTIONS = [
+  {
+    handle: 'germination-propagation',
+    title: 'Germination & Propagation',
+    desc: 'Start strong. Root health first.',
+  },
+  {handle: 'vegetation', title: 'Vegetation', desc: 'Structure, speed, canopy control.'},
+  {handle: 'flower', title: 'Flower', desc: 'PPFD, DLI, VPD—quality is made here.'},
+  {handle: 'environment-vpd', title: 'Environment & VPD', desc: 'Air is a nutrient. Control it.'},
+  {handle: 'automation-control', title: 'Automation & Control', desc: 'Consistency beats talent.'},
+  {handle: 'harvest-dry', title: 'Harvest & Dry', desc: 'Preserve terps. Don’t fumble the finish.'},
+];
+
+type CollectionNode = {
+  handle: string;
+  title: string;
+  image?: {url: string; altText?: string | null} | null;
+};
+
+type CollectionsQueryResult = {
+  collections: {nodes: CollectionNode[]};
+};
+
+export async function loader({context}: LoaderFunctionArgs) {
+  const {storefront} = context;
+
+  // Build a proper Storefront "query" string:
+  // handle:a OR handle:b OR handle:c
+  const query = GROW_COLLECTIONS.map((c) => `handle:${c.handle}`).join(' OR ');
+
+  // Keep the original deferred loading behavior but catch errors so the UI can
+  // render a friendly message instead of leaving Suspense hanging.
+  const growCollections = storefront
+    .query<CollectionsQueryResult>(COLLECTIONS_BY_QUERY, {variables: {query}})
+    .catch((err) => {
+      // Log server-side to help with debugging
+      // The resolved shape mirrors CollectionsQueryResult but includes __error to signal failures.
+      console.error('Failed to load grow collections in loader:', err);
+      return {
+        collections: {nodes: []},
+        __error: {message: err?.message ?? 'Unknown error while loading collections'},
+      } as unknown as CollectionsQueryResult & {__error?: {message: string}};
+    });
+
+  return defer({growCollections});
+}
+
+export default function ShopHubRoute() {
+  const data = useLoaderData<typeof loader>();
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-zinc-50">
+      <div className="mx-auto max-w-6xl px-4 py-10">
+        <header className="mb-10">
+          <div className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-sm text-zinc-200">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            COUGH BROS — SHOP HUB
+          </div>
+          <h1 className="mt-4 text-4xl font-semibold tracking-tight">
+            Build. Smoke. Represent.
+          </h1>
+          <p className="mt-3 max-w-2xl text-zinc-300">
+            Curated gear and culture—organized the way growers actually think. The Grow Shop follows the Cough Bros Guide
+            from seed to harvest.
+          </p>
+        </header>
+
+        {/* Top-level 3 tiles */}
+        <section className="grid gap-4 md:grid-cols-3">
+          <HubTile title="Grow Shop" subtitle="Seed → Harvest gear, guide-aligned" to="#grow" badge="Guide Approved" />
+          <HubTile title="Smoke Shop" subtitle="Accessories, storage, session tools" to="/collections/smoke-shop" badge="Coming Online" />
+          <HubTile title="Parashop" subtitle="Apparel, patches, drops" to="/collections/parashop" badge="Limited Drops" />
+        </section>
+
+        {/* Grow collections */}
+        <section id="grow" className="mt-12">
+          <div className="mb-4 flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold">Grow Shop</h2>
+              <p className="mt-1 text-zinc-300">Shop by stage. This is the guide turned into a store.</p>
+            </div>
+            <Link
+              to="/collections/grow-shop"
+              prefetch="intent"
+              className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-100 hover:bg-zinc-800"
+            >
+              View all Grow Shop
+            </Link>
+          </div>
+
+          <Suspense fallback={<SkeletonGrid />}> 
+            <Await resolve={data.growCollections}> 
+              {(res: CollectionsQueryResult & {__error?: {message: string}}) => { 
+                if (res && (res as any).__error) { 
+                  return ( 
+                    <div className="rounded-2xl border border-red-700/30 bg-red-900/40 p-6 text-sm text-red-200"> 
+                      <strong className="block font-semibold">Unable to load collections</strong> 
+                      <p className="mt-2">There was a problem loading the Grow Shop collections. {res.__error?.message ?? ''}</p> 
+                      <p className="mt-2 text-xs text-red-300">Try refreshing or check back shortly.</p> 
+                    </div> 
+                  ); 
+                } 
+
+                const map = new Map(res.collections.nodes.map((c) => [c.handle, c])); 
+
+                return ( 
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"> 
+                    {GROW_COLLECTIONS.map((c) => { 
+                      const col = map.get(c.handle); 
+                      const to = col ? `/collections/${col.handle}` : `/collections/grow-shop`;
+
+                      return ( 
+                        <CollectionCard 
+                          key={c.handle} 
+                          title={c.title} 
+                          desc={c.desc} 
+                          to={to} 
+                          // Use a meaningful alt when available; never pass null. 
+                          imageUrl={col?.image?.url} 
+                          imageAlt={col?.image?.altText ?? c.title} 
+                        /> 
+                      ); 
+                    })} 
+                  </div> 
+                ); 
+              }} 
+            </Await> 
+          </Suspense> 
+        </section> 
+
+        <footer className="mt-14 border-t border-zinc-800 pt-6 text-sm text-zinc-400">
+          Mars Hydro products remain Mars Hydro branded. Cough Bros curates, recommends, and teaches the workflow.
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function HubTile({
+  title,
+  subtitle,
+  to,
+  badge,
+}: {
+  title: string;
+  subtitle: string;
+  to: string;
+  badge: string;
+}) {
+  return (
+    <Link
+      to={to}
+      prefetch="intent"
+      className="group rounded-2xl border border-zinc-800 bg-gradient-to-b from-zinc-900 to-zinc-950 p-5 hover:border-zinc-700"
+    >
+      <div className="flex items-center justify-between">
+        <div className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-200">
+          {badge}
+        </div>
+        <span className="text-zinc-500 group-hover:text-zinc-300">→</span>
+      </div>
+      <h3 className="mt-4 text-xl font-semibold">{title}</h3>
+      <p className="mt-2 text-sm text-zinc-300">{subtitle}</p>
+      <div className="mt-5 h-1 w-16 rounded-full bg-emerald-400/80" />
+    </Link>
+  );
+}
+
+function CollectionCard({
+  title,
+  desc,
+  to,
+  imageUrl,
+  imageAlt,
+}: {
+  title: string;
+  desc: string;
+  to: string;
+  imageUrl?: string;
+  imageAlt?: string;
+}) {
+  return (
+    <Link
+      to={to}
+      prefetch="intent"
+      className="group overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 hover:border-zinc-700"
+      aria-label={`Shop ${title}`}
+    >
+      <div className="relative h-40 w-full bg-zinc-900">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={imageAlt ?? title}
+            className="h-full w-full object-cover opacity-80 transition group-hover:opacity-100"
+            loading="lazy"
+          />
+        ) : (
+          <div className="h-full w-full" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-transparent" />
+      </div>
+      <div className="p-5">
+        <h4 className="text-lg font-semibold">{title}</h4>
+        <p className="mt-2 text-sm text-zinc-300">{desc}</p>
+        <div className="mt-4 inline-flex items-center gap-2 text-sm text-zinc-200">
+          Shop <span className="text-emerald-400">→</span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function SkeletonGrid() {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" aria-hidden>
+      {Array.from({length: 6}).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4"
+        >
+          <div className="h-40 w-full animate-pulse rounded-md bg-zinc-800" />
+          <div className="mt-4 h-4 w-3/4 animate-pulse rounded bg-zinc-800" />
+          <div className="mt-2 h-3 w-1/2 animate-pulse rounded bg-zinc-800" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const COLLECTIONS_BY_QUERY = `#graphql
+  query CollectionsByQuery($query: String!) {
+    collections(first: 50, query: $query) {
+      nodes {
+        handle
+        title
+        image {
+          url
+          altText
+        }
+      }
+    }
+  }
+`;
